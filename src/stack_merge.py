@@ -24,6 +24,8 @@ for file in os.listdir(processes_dir):
         )
         process_flows_df = pd.DataFrame(process_flows)
         process_flows_df["amount"] = process_flows_df["amount"].astype(float)
+        #increase flow direction field
+        process_flows_df["flow_direction"] = process_flows_df["isInput"].apply(lambda x: "input" if x else "output")
 
         merged_df = pd.merge(process_flows_df, flow_index_df, on="flow_id", how="left")
 

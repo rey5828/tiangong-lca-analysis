@@ -16,16 +16,17 @@ process_mapping = {
     "mappings": {
         "properties": {
             "process_id": {"type": "keyword"},
-            "process_name": {"type": "text"},
+            "process_name": {"type": "keyword"},
             "process_type": {"type": "keyword"},
             "process_category": {"type": "keyword"},
             "process_location": {"type": "keyword"},
             "flow_id": {"type": "keyword"},
             "flow_amount": {"type": "double"},
             "flow_unit": {"type": "keyword"},
-            "flow_name": {"type": "text"},
+            "flow_name": {"type": "keyword"},
             "flow_type": {"type": "keyword"},
             "flow_category": {"type": "keyword"},
+            "flow_direction": {"type": "keyword"}
         }
     }
 }
@@ -53,6 +54,7 @@ for record in process_df.to_dict(orient="records"):
             "flow_name": record["flow_name"],
             "flow_type": record["flow_type"],
             "flow_category": record["flow_category"],
+            "flow_direction": record["flow_direction"],
         },
     }
     process_data.append(output_data)

@@ -31,6 +31,7 @@ for file in os.listdir(input_dir):
             "flow_id": exchange["flow"]["@id"],
             "amount": exchange["amount"],
             "unit": exchange["unit"]["name"],
+            "isInput": exchange["isInput"] 
         }
 
         if exchange["isInput"]:
