@@ -54,10 +54,10 @@ def convert_csv_to_json(csv_path, output_json_path):
 
 if __name__ == "__main__":
     # CSV文件路径
-    csv_path = "/mnt/d/json/extracted_ghgflows.csv"
+    csv_path = "/mnt/e/SynologyDrive/SynologyDrive/SynologyDrive/json/extracted_ghgflows.csv"
     
     # 输出JSON文件路径
-    output_json_path = "data/ghgs.json"
+    output_json_path = "data/jsons/ghgs.json"
     
     # 执行转换
     convert_csv_to_json(csv_path, output_json_path)

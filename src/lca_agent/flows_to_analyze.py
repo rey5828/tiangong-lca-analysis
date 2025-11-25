@@ -39,9 +39,9 @@ def save_filtered_flows(filtered_data, output_file_path):
 
 def main():
     # 文件路径
-    flows_file_path = os.path.join('data', 'flows_list_all.json')
-    ghgs_file_path = os.path.join('data', 'ghgs.json')
-    output_file_path = os.path.join('data', 'flows_list_analyze.json')
+    flows_file_path = os.path.join('data', 'jsons', 'flows_list_all.json')
+    ghgs_file_path = os.path.join('data', 'jsons', 'ghgs.json')
+    output_file_path = os.path.join('data', 'jsons', 'flows_list_analyze.json')
     
     # 加载数据
     flows_data = load_json(flows_file_path)
