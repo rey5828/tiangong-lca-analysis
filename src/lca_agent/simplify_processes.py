@@ -43,12 +43,34 @@ def simplify_process_json(input_file, output_dir):
             
             # 提取流信息
             if "flow" in exchange:
-                simplified_exchange["flow"] = {
-                    "@id": exchange["flow"].get("@id", ""),
-                    "name": exchange["flow"].get("name", ""),
-                    "category": exchange["flow"].get("category", ""),
-                    "flowType": exchange["flow"].get("flowType", "")
+                flow_data = exchange["flow"]
+                is_input = simplified_exchange["isInput"]
+                flow_type = flow_data.get("flowType", "")
+
+                flow_info = {
+                    "name": flow_data.get("name", "")
                 }
+
+                include_category = False
+                include_flow_type = True
+
+                if is_input:
+                    include_category = False
+                else:
+                    if flow_type in {"PRODUCT_FLOW", "WASTE_FLOW"}:
+                        include_category = False
+                    elif flow_type == "ELEMENTARY_FLOW":
+                        include_category = True
+                        include_flow_type = False
+                    else:
+                        include_category = True
+
+                if include_category:
+                    flow_info["category"] = flow_data.get("category", "")
+                if include_flow_type and flow_type:
+                    flow_info["flowType"] = flow_type
+
+                simplified_exchange["flow"] = flow_info
             
             # 提取单位信息
             if "unit" in exchange:
@@ -68,12 +90,12 @@ def simplify_process_json(input_file, output_dir):
     return output_file
 
 def process_selected_json_files():
-    """处理在process_list_all.json中列出的JSON文件"""
+    """处理在process_ids.json中列出的JSON文件"""
     # 定义目录路径
-    base_dir = Path("/home/Rui/tiangong-lca-analysis")
+    base_dir = Path("/home/rui/tiangong-lca-analysis")
     input_dir = base_dir / "data/processes"
     output_dir = base_dir / "data/processes_simplified"
-    process_list_path = base_dir / "data/process_list_all.json"
+    process_list_path = base_dir / "data/jsons/process_ids.json"
     
     # 确保输出目录存在
     output_dir.mkdir(parents=True, exist_ok=True)

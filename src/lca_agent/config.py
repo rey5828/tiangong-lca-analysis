@@ -44,16 +44,16 @@ RESULTS_JSON_DIR.mkdir(parents=True, exist_ok=True)
 # --- 输入文件路径 ---
 
 # 1. 单元过程ID列表
-PROCESS_LIST_PATH = DATA_DIR / "process_list.json"
+PROCESS_LIST_PATH = DATA_DIR / "jsons" / "process_list.json"
 
 # 2. 存放所有单元过程JSON文件的目录
 PROCESS_JSONS_DIR = DATA_DIR / "process_compressed"
 
 # 3. 温室气体名单
-GHG_LIST_PATH = DATA_DIR / "ghgs.json"
+GHG_LIST_PATH = DATA_DIR / "jsons" / "ghgs.json"
 
 # 4. 待分析的Flows列表
-FLOWS_TO_ANALYZE_PATH = DATA_DIR / "flows_to_analyze.json"
+FLOWS_TO_ANALYZE_PATH = DATA_DIR / "jsons" / "flows_to_analyze.json"
 
 
 # --- 输出文件路径 ---

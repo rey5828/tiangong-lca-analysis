@@ -7,7 +7,7 @@ def compress_json_files():
     将data/processes_simplified目录中的所有JSON文件压缩并保存到data/process_compressed目录
     """
     # 定义输入和输出目录
-    base_dir = Path("/home/Rui/tiangong-lca-analysis")
+    base_dir = Path("/home/rui/tiangong-lca-analysis")
     input_dir = base_dir / "data/processes_simplified"
     output_dir = base_dir / "data/process_compressed"
     
