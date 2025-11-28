@@ -13,13 +13,13 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 MODELS_TO_RUN = [
     #"anthropic/claude-sonnet-4", 
-    "anthropic/claude-3.7-sonnet",
+    #"anthropic/claude-3.7-sonnet",
     #"deepseek/deepseek-r1-0528",
-    "qwen/qwen3-235b-a22b-thinking-2507",
-    "deepseek/deepseek-r1-0528:free",
+    #"qwen/qwen3-235b-a22b-thinking-2507",
+    #"deepseek/deepseek-r1-0528:free",
     #"google/gemini-2.5-pro", 
     #"openai/o3-mini-high",
-    #"openai/gpt-5",
+    "openai/gpt-5.1",
 ]
 
 
@@ -29,7 +29,7 @@ MODELS_TO_RUN = [
 # Path(__file__) 获取当前文件路径
 # .resolve() 获取绝对路径
 # .parent 获取父目录
-# 假设你的结构是 project_root/config.py, 那么 ROOT_DIR 就是 project_root
+# 假设结构是 project_root/config.py, 那么 ROOT_DIR 就是 project_root
 ROOT_DIR = Path(__file__).resolve().parents[2] # 获取上两级目录
 
 # 定义数据和结果目录的路径
