@@ -17,17 +17,17 @@ class LCAAnalystAgent:
     """
     def __init__(self, model_name: str):
         """
-        初始化Agent,设置LangChain模型并连接到OpenRouter
+        初始化Agent,设置LangChain模型并连接到OpenAI/OpenRouter
         """
-        if not config.OPENROUTER_API_KEY or config.OPENROUTER_API_KEY == "YOUR_API_KEY_HERE":
-            raise ValueError("OpenRouter API key is not set. Please set the OPENROUTER_API_KEY environment variable.")
+        if not config.OPENAI_API_KEY:
+            raise ValueError("OpenAI API key is not set. Please set the OPENAI_API_KEY environment variable.")
         
-        # 初始化LangChain的ChatOpenAI模型,并指向OpenRouter
+        # 初始化LangChain的ChatOpenAI模型,并指向OpenAI/OpenRouter
         self.llm = ChatOpenAI(
             model=model_name,
             #temperature=0.1,  # 较低的温度以获得更稳定的输出
-            openai_api_key=config.OPENROUTER_API_KEY,
-            openai_api_base=config.OPENROUTER_BASE_URL
+            openai_api_key=config.OPENAI_API_KEY,
+            openai_api_base=config.OPENAI_BASE_URL
         )
         
         self.model_name = model_name
