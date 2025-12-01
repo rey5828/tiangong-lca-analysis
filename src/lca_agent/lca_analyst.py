@@ -51,33 +51,19 @@ Analyze an ecoinvent unit process to determine the relationship between its spec
 # Context
 1.  Unit Process for Analysis: The process is described in the following JSON data. Pay close attention to the `name`, `description`, `technologyDescription`, and `samplingDescription` fields to understand its nature.
     {process_json_content}
-2.  Greenhouse Gas (GHG) Definition: For this analysis, GHG emissions are defined as the sum of all elementary flows listed below, weighted by their Global Warming Potential (GWP100). You should consider emissions of these gases:
+2.  Greenhouse Gas (GHG) Definition: For this analysis, GHG emissions are defined as the set of elementary flows listed below. Treat any emission of these flows as contributing to total GHG emissions:
     {ghg_list_str}
 3.  Target Output Flows: You must focus your analysis ONLY on the following output elementary flows from the process. Do not analyze any other flows:
     {flows_to_analyze_str}
 # Task & Instructions
-For EACH elementary flow in the "Target Output Flows" list, note its temporary `analysis_id`. You must perform the following two-step analysis for each:
-First, perform Step 1 (Qualitative Analysis).
-Then, IF AND ONLY IF the result of Step 1 is `Positive` or `Negative`, you must proceed to Step 2 (Quantitative Analysis). If the result of Step 1 is `Neutral`, you MUST skip Step 2 and leave the quantitative fields as null in the final output.
----
-**Step 1: Qualitative Relationship Analysis**
+Each entry in the target list provides a canonical `flow_combo` string (`flow_name | flow_category`). Treat this `flow_combo` as the unique identifier for the flow and include it verbatim in your output. Each greenhouse gas listed above is also provided as a canonical `ghg_combo` string with the same structure—use that exact combo when referring to individual GHGs. For EACH elementary flow, perform the following analysis:
+Qualitative Relationship Analysis
 - Question: Assuming the production output of the main product is held constant, based on the process mechanism and operating conditions (e.g., combustion efficiency, reaction pathways, treatment technology), what is the qualitative relationship between the emission of this target flow and the emission of GHGs?
 - Answer Format: Provide one of the following keywords:
  - `Positive`: The target flow and GHG emissions tend to increase or decrease together under the same process conditions.
  - `Negative`: The target flow and GHG emissions tend to vary in opposite directions under the same process conditions (e.g., a change that reduces GHG emissions typically increases this flow, or vice versa).
  - `Neutral`: There is no clear or consistent relationship between this flow and GHG emissions. Their variation appears independent or too uncertain to establish a directional link.
 - Reasoning: Briefly explain the underlying physical, chemical, or operational mechanism for the relationship, or the lack thereof.
----
-**Step 2: Quantitative Mechanistic Effect Estimation**
-(REMINDER: Only perform this step if the result from Step 1 was `Positive` or `Negative`)
-- Question: Based on the mechanistic relationship identified in Step 1, if GHG emissions increase by 1 kg CO₂e due to changes in the relevant process conditions, what is the estimated corresponding change in the output of this flow?
-- Answer Format: Provide a plausible numerical estimate expressed as "units of change in the output flow per kg of change in GHG (in CO₂e)".
- - For a `Negative` relationship, this value MUST be a negative number.
-- Methodology:
- - Base your estimate on the known physical/chemical/operational mechanisms. DO NOT simply divide total output by total emissions; focus on plausible mechanistic linkages.
- - If you cannot provide a single number, provide a likely range. If estimation is not feasible, state "Not Feasible".
- - In the `linearity_notes` field, briefly state your expert opinion on whether this linear estimation is a good approximation, or if the true relationship is likely non-linear (e.g., U-shaped, subject to diminishing returns, etc.) and why.
-- Confidence Score: Rate your confidence in this estimation on a scale of 1 (very low, a pure guess) to 5 (very high, based on well-known industry standards).
 # Output Format
 Do not include any text or keys outside of this JSON object. You MUST provide an analysis object in the `flow_analyses` array for EVERY SINGLE flow listed in the 'Target Output Flows' section above. Do not omit any flows.
 """
@@ -117,27 +103,67 @@ Do not include any text or keys outside of this JSON object. You MUST provide an
                     "items": {
                         "type": "object",
                         "properties": {
-                            "analysis_id": {
+                            "flow_combo": {
                                 "type": "string",
-                                "description": "The temporary analysis ID provided for matching."
+                                "description": "Canonical 'flow_name | flow_category' string identifying the flow."
                             },
-                            "qualitative_relationship": {
-                                "type": "string",
-                                "enum": ["Positive", "Negative", "Neutral"]
-                            },
-                            "qualitative_reasoning": {"type": "string"},
-                            "quantitative_coefficient": {"type": ["number", "string", "null"]},
-                            "quantitative_confidence": {"type": ["integer", "null"]},
-                            "linearity_notes": { 
-                                "type": "string",
-                                 "description": "Expert opinion on linearity of the relationship."
+                            "individual_ghg_analyses": {
+                                "type": "array",
+                                "description": "A list of analysis results for this pollutant against each individual greenhouse gas.",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "ghg_combo": {
+                                            "type": "string",
+                                            "description": "Canonical 'flow_name | flow_category' string identifying the greenhouse gas."
+                                        },
+                                        "qualitative_relationship": {
+                                            "type": "string",
+                                            "enum": [
+                                                "Positive",
+                                                "Negative",
+                                                "Neutral"
+                                            ]
+                                        },
+                                        "qualitative_reasoning": {
+                                            "type": "string"
+                                        },
+                                        "confidence": {
+                                            "type": "string",
+                                            "enum": [
+                                                "High",
+                                                "Medium",
+                                                "Low"
+                                            ]
+                                        },
+                                        "evidence_flows": {
+                                            "type": "array",
+                                            "description": "List of flow names from the JSON that act as evidence.",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "ghg_combo",
+                                        "qualitative_relationship",
+                                        "qualitative_reasoning",
+                                        "confidence",
+                                        "evidence_flows"
+                                    ]
+                                }
                             }
                         },
-                        "required": ["qualitative_relationship", "qualitative_reasoning", "quantitative_coefficient", "quantitative_confidence", "linearity_notes"]
+                        "required": [
+                            "flow_combo",
+                            "individual_ghg_analyses"
+                        ]
                     }
                 }
             },
-            "required": ["flow_analyses"]
+            "required": [
+                "flow_analyses"
+            ]
         }
         
         prompt_template = ChatPromptTemplate.from_messages([

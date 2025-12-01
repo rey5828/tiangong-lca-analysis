@@ -48,7 +48,7 @@ def run_pipeline():
     # 1. 初始化
     #    在循环开始前，加载一次性静态数据，提高效率
     try:
-        process_ids, flows_to_analyze_map, all_ghgs_map = load_static_data()
+        process_ids, flows_to_analyze_map, ghg_combos = load_static_data()
     except Exception as e:
         logging.critical(f"Critical Error during static data loading: {e}", exc_info=True) 
         return # 如果失败，则无法继续
@@ -88,16 +88,19 @@ def run_pipeline():
                     continue
 
                 # Step A: 调用 Data Fetcher 获取此过程的数据
-                process_data_package = fetch_data_for_process(process_id, flows_to_analyze_map, all_ghgs_map)
+                process_data_package = fetch_data_for_process(process_id, flows_to_analyze_map, ghg_combos)
                 if not process_data_package:
                     # fetch_data_for_process 内部会打印警告/错误，这里直接继续即可
                     continue
                 
-                process_json_content, target_flows_with_aid, relevant_ghg_list_str = process_data_package
+                process_json_content, target_flows, relevant_ghg_list_str, relevant_ghgs = process_data_package
+
+                ghg_log_str = ", ".join(relevant_ghgs) if relevant_ghgs else "None"
+                logging.info(f"Relevant GHG combos for {process_id}: {ghg_log_str}")
 
                 # Step B: 调用 LCA Analyst 进行分析, 调用LCA Analyst获取“无ID”的分析结果, 加入重试逻辑
                 max_retries = 3 # 设置最大重试次数
-                flows_to_process = target_flows_with_aid[:] # 创建一个待处理列表的副本
+                flows_to_process = target_flows[:] # 创建一个待处理列表的副本
                 all_results = [] # 存储所有成功返回的结果
                 
                 for attempt in range(max_retries + 1):
@@ -121,34 +124,35 @@ def run_pipeline():
                     all_results.extend(returned_analyses) # 将本次成功的结果加入总列表
 
                     # 找出哪些flow被遗漏了，准备下一次重试
-                    processed_ids = {item.get('analysis_id') for item in returned_analyses if item.get('analysis_id')}
-                    flows_to_process = [flow for flow in flows_to_process if flow['analysis_id'] not in processed_ids]
+                    processed_combos = {item.get('flow_combo') for item in returned_analyses if item.get('flow_combo')}
+                    flows_to_process = [flow for flow in flows_to_process if flow['flow_combo'] not in processed_combos]
 
                 if flows_to_process:
-                    logging.warning(f"After all retries, {len(flows_to_process)} flows were still not analyzed for process {process_id}.")
+                    logging.warning(
+                        f"After all retries, {len(flows_to_process)} flows were still not analyzed for process {process_id}."
+                    )
 
                 # Step C: 构建最终的、ID准确的JSON结构
-                logging.info(f"Matching results from array and injecting correct IDs for process: {process_id}...")
+                logging.info(f"Matching results from array and aligning flow combos for process: {process_id}...")
                 
-                # 为了快速匹配，将LLM返回的列表转换为以analysis_id为键的字典
-                llm_results_map = {item.get('analysis_id'): item for item in all_results if 'analysis_id' in item}
+                # 为了快速匹配，将LLM返回的列表转换为以 flow_combo 为键的字典
+                llm_results_map = {item.get('flow_combo'): item for item in all_results if 'flow_combo' in item}
                 #初始化为列表而非字典
                 final_flow_analyses = []
                 # 遍历target_flows 列表
-                for flow_info in target_flows_with_aid:
-                    analysis_id = flow_info['analysis_id']
-                    correct_flow_name = flow_info['flow_name']
-                    correct_flow_id = flow_info['flow_id']
+                for flow_info in target_flows:
+                    flow_combo = flow_info['flow_combo']
 
-                    # 从转换后的map中，使用 analysis_id 查找对应的分析数据
-                    analysis_data = llm_results_map.get(analysis_id)
+                    # 从转换后的map中查找对应的分析数据
+                    analysis_data = llm_results_map.get(flow_combo)
 
                     if analysis_data:
-                        analysis_data['flow_name'] = correct_flow_name
-                        analysis_data['flow_id'] = correct_flow_id
+                        analysis_data['flow_combo'] = flow_combo
                         final_flow_analyses.append(analysis_data)
                     else:
-                        logging.warning(f"LLM response did not contain a result for analysis_id '{analysis_id}' (Flow: '{correct_flow_name}'). This flow will be omitted.")
+                        logging.warning(
+                            f"LLM response did not contain a result for flow '{flow_combo}'. This flow will be omitted."
+                        )
                         
                 # 用正确的 process_id 将所有内容包装起来，形成最终结构
                 final_output_dict = {
