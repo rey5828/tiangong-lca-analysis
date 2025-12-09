@@ -27,9 +27,7 @@ def simplify_process_json(input_file, output_dir):
     # 提取工艺文档信息
     if "processDocumentation" in data:
         simplified["processDocumentation"] = {
-            "timeDescription": data["processDocumentation"].get("timeDescription", ""),
-            "technologyDescription": data["processDocumentation"].get("technologyDescription", ""),
-            "samplingDescription": data["processDocumentation"].get("samplingDescription", "")
+            "technologyDescription": data["processDocumentation"].get("technologyDescription", "")
         }
     
     # 提取交换信息

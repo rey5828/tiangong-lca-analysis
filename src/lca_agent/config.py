@@ -20,7 +20,7 @@ MODELS_TO_RUN = [
     #"deepseek/deepseek-r1-0528:free",
     #"google/gemini-2.5-pro", 
     #"openai/o3-mini-high",
-    "openai/gpt-5.1",
+    "gpt-5.1-2025-11-13",
 ]
 
 
