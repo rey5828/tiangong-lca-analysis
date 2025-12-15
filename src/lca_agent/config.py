@@ -14,13 +14,14 @@ OPENAI_BASE_URL = "https://api.openai.com/v1"
 
 MODELS_TO_RUN = [
     #"anthropic/claude-sonnet-4", 
-    #"anthropic/claude-3.7-sonnet",
     #"deepseek/deepseek-r1-0528",
     #"qwen/qwen3-235b-a22b-thinking-2507",
     #"deepseek/deepseek-r1-0528:free",
     #"google/gemini-2.5-pro", 
+    #"google/gemini-3-pro-preview",
     #"openai/o3-mini-high",
-    "gpt-5.1-2025-11-13",
+    "gpt-5-mini-2025-08-07",
+    #"gpt-5.1-2025-11-13",
 ]
 
 
