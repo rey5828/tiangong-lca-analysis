@@ -26,6 +26,12 @@ pip install -r requirements.txt --upgrade
 pip freeze > requirements_freeze.txt
 ```
 
+### API Keys
+
+- OpenAI models（例如 `gpt-*`）：设置环境变量 `OPENAI_API_KEY`
+- OpenRouter models（例如 `google/gemini-*`）：设置环境变量 `OPENROUTER_API_KEY`
+- 如需启用 Google 搜索工具：设置 `GOOGLE_API_KEY` 与 `GOOGLE_CSE_ID`（或 `GOOGLE_CX`）
+
 ```bash
 sudo apt install python3.12-dev
 ```

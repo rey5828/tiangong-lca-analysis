@@ -11,6 +11,7 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OPENAI_BASE_URL = "https://api.openai.com/v1"
+VLLM_BASE_URL = "http://192.168.1.140:8001/v1/"
 
 MODELS_TO_RUN = [
     #"anthropic/claude-sonnet-4", 
@@ -20,8 +21,9 @@ MODELS_TO_RUN = [
     #"google/gemini-2.5-pro", 
     #"google/gemini-3-pro-preview",
     #"openai/o3-mini-high",
-    "gpt-5-mini-2025-08-07",
+    #"gpt-5-mini-2025-08-07",
     #"gpt-5.1-2025-11-13",
+    "openai-mirror/gpt-oss-120b"
 ]
 
 

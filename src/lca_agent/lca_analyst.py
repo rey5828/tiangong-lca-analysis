@@ -1,12 +1,10 @@
 import json
 import logging
 import os
-from typing import List, Dict
+from typing import Any, Dict, List, Optional
 
 import requests
-from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
-from langchain_core.tools import tool
-from langchain_openai import ChatOpenAI
+from openai import OpenAI
 
 # 使用相对导入从同一目录导入config
 from . import config  # 导入配置以获取API密钥
@@ -43,74 +41,79 @@ class MyGoogleSearchWrapper:
 class LCAAnalystAgent:
     """
     自主迭代式 LCA 分析智能体。
-    具备 Google 搜索能力，利用 ReAct 模式和工业机理原型进行碳污关系分析。
+    具备 Google 搜索能力，利用 tool calling + 迭代循环进行碳污关系分析。
     """
     def __init__(self, model_name: str):
-        if not config.OPENAI_API_KEY:
-            raise ValueError("OpenAI API key is not set.")
-        
-        # 1. 初始化 LLM
-        self.llm = ChatOpenAI(
-            model=model_name,
-            #temperature=0,  # 保持逻辑严密性
-            openai_api_key=config.OPENAI_API_KEY,
-            openai_api_base=config.OPENAI_BASE_URL
-        )
         self.model_name = model_name
+
+        # 1. 初始化 OpenAI Client（兼容 OpenAI / OpenRouter base_url）
+        api_key, base_url = self._resolve_api_key_and_base_url(model_name)
+        self.client = OpenAI(api_key=api_key, base_url=base_url)
         
         # 2. 初始化 Google Search Tool
-        self.google_search_tool = self._init_google_search_tool()
+        self._google_search_wrapper = self._init_google_search_wrapper()
 
         print(f"[*] LCA Agent initialized with model: {self.model_name} and Google Search.")
 
-    def _init_google_search_tool(self):
-        """配置 Google Custom Search 并封装为 LangChain Tool。"""
+    def _resolve_api_key_and_base_url(self, model_name: str) -> tuple[str, str]:
+        """
+        根据 model_name 选择 OpenAI 或 OpenRouter 的 key/base_url。
+        - OpenRouter 的模型一般形如 `provider/model`（例如 `google/gemini-2.5-pro`）。
+        - OpenAI 原生模型一般不带 `/`（例如 `gpt-5.1-2025-11-13`）。
+        """
+        if "/" in (model_name or ""):
+            if not config.OPENROUTER_API_KEY:
+                raise ValueError("OPENROUTER_API_KEY is not set (required for models like 'google/gemini-*').")
+            return config.OPENROUTER_API_KEY, config.OPENROUTER_BASE_URL
+
+        if not config.OPENAI_API_KEY:
+            raise ValueError("OPENAI_API_KEY is not set.")
+        return config.OPENAI_API_KEY, config.OPENAI_BASE_URL
+
+    def _init_google_search_wrapper(self) -> MyGoogleSearchWrapper:
+        """配置 Google Custom Search client。"""
         google_api_key = os.getenv("GOOGLE_API_KEY")
         google_cse_id = os.getenv("GOOGLE_CSE_ID") or os.getenv("GOOGLE_CX")
 
         if not google_api_key or not google_cse_id:
             raise ValueError("GOOGLE_API_KEY and GOOGLE_CSE_ID (or GOOGLE_CX) must be set for Google Search.")
 
-        self._google_search_wrapper = MyGoogleSearchWrapper(
+        return MyGoogleSearchWrapper(
             api_key=google_api_key,
             cse_id=google_cse_id,
         )
 
-        @tool("google_search")
-        def google_search(query: str) -> str:
-            """Search external sources for mechanistic or process details. Always return title + snippet."""
-            query = (query or "").strip()
-            if not query:
-                return "Search Error: query is empty."
+    def _google_search(self, query: str) -> str:
+        """Search external sources for mechanistic or process details. Always return title + snippet."""
+        query = (query or "").strip()
+        if not query:
+            return "Search Error: query is empty."
 
-            logging.info("[Search] Query: %s", query)
-            try:
-                results = self._google_search_wrapper.results(query, num_results=10)
-            except Exception as exc:
-                logging.error("Google Search failed: %s", exc)
-                return f"Search Error: {exc}"
+        logging.info("[Search] Query: %s", query)
+        try:
+            results = self._google_search_wrapper.results(query, num_results=10)
+        except Exception as exc:
+            logging.error("Google Search failed: %s", exc)
+            return f"Search Error: {exc}"
 
-            if not results:
-                logging.info("[Search] Completed with 0 results.")
-                return "No results found."
+        if not results:
+            logging.info("[Search] Completed with 0 results.")
+            return "No results found."
 
-            logging.info("[Search] Completed successfully with %d results.", len(results))
-            combined_snippets = []
-            for idx, item in enumerate(results, start=1):
-                title = item.get("title") or "Untitled Result"
-                snippet = item.get("snippet") or item.get("description") or "No snippet available."
-                combined_snippets.append(f"{idx}. {title}: {snippet}")
+        logging.info("[Search] Completed successfully with %d results.", len(results))
+        combined_snippets = []
+        for idx, item in enumerate(results, start=1):
+            title = item.get("title") or "Untitled Result"
+            snippet = item.get("snippet") or item.get("description") or "No snippet available."
+            combined_snippets.append(f"{idx}. {title}: {snippet}")
 
-            return "\n".join(combined_snippets)
-
-        return google_search
+        return "\n".join(combined_snippets)
 
     def _build_system_prompt(self) -> str:
         """
         构建核心 System Prompt，包含思维链引导和工业逻辑原型。
         """
-        return """You are a world-class expert in Industrial Ecology, with deep specialization in industrial processes and greenhouse gas emission mechanisms.
-
+        return """
 # Goal
 Determine the mechanistic relationship between specific Pollutants and each Greenhouse Gase (GHG) within a fixed unit process.
 
@@ -121,7 +124,7 @@ When analyzing the relationship, you MUST map it to one of these 4 archetypes:
 3. Process Synergy (Positive): A specific underlying process parameter within the unit process (e.g., combustion temperature, reaction pressure) directly constitutes the formation mechanism for BOTH flows. Do NOT assume hypothetical operational or behavioral improvements.
 4. Decoupled (Neutral): The pollutant and GHG originate from mechanistically independent sub-processes, with no shared reaction, control parameter, or energy-based coupling (e.g., Noise vs Combustion CO2).
 
-# Reasoning Process (Chain of Thought)
+# Step-by-step instruction
 You must follow this sequence internally for EACH flow:
 1. Process Decomposition: Break the technology description into unit operations (e.g., combustion, Reaction, Separation).
 2. Source Mapping: Pinpoint exactly which unit operation generates the Pollutant and which generates the GHG. 
@@ -176,14 +179,37 @@ You must follow this sequence internally for EACH flow:
             }
         }
 
+    def _build_tools(self) -> List[Dict[str, Any]]:
+        final_tool_schema = self._define_final_schema()
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": "google_search",
+                    "description": "Search external sources for mechanistic or process details. Always return title + snippet.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"query": {"type": "string"}},
+                        "required": ["query"],
+                    },
+                },
+            },
+            {"type": "function", "function": final_tool_schema},
+        ]
+
+    def _chat(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> Any:
+        return self.client.chat.completions.create(
+            model=self.model_name,
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
+        )
+
     def _run_batch_analysis(self, process_context: str, batch_flows: List[Dict], ghg_list_str: str, max_iterations: int = 5) -> List[Dict]:
         """
         运行单个批次的 ReAct 循环。
         """
-        # 1. 准备工具
-        final_tool_schema = self._define_final_schema()
-        # 绑定 Google 搜索和 结果提交工具
-        llm_with_tools = self.llm.bind_tools([self.google_search_tool, final_tool_schema])
+        tools = self._build_tools()
 
         # 2. 构造 User Input
         batch_flows_str = json.dumps(batch_flows, indent=2)
@@ -202,9 +228,9 @@ Analyze the relationship between the Target Flows and GHGs.
 Use `google_search` if you need external verification of chemical mechanisms.
 Call `submit_final_analysis` when done.
 """
-        messages = [
-            SystemMessage(content=self._build_system_prompt()),
-            HumanMessage(content=user_msg_content)
+        messages: List[Dict[str, Any]] = [
+            {"role": "system", "content": self._build_system_prompt()},
+            {"role": "user", "content": user_msg_content},
         ]
 
         # 3. 智能体迭代循环
@@ -214,33 +240,57 @@ Call `submit_final_analysis` when done.
             print(f"    [Loop] Iteration {current_iter}/{max_iterations}")
 
             try:
-                # 调用 LLM
-                ai_msg = llm_with_tools.invoke(messages)
-                messages.append(ai_msg)
+                response = self._chat(messages=messages, tools=tools)
+                assistant_msg = response.choices[0].message
 
-                # 检查工具调用
-                if ai_msg.tool_calls:
-                    for tool_call in ai_msg.tool_calls:
-                        tool_name = tool_call["name"]
-                        tool_args = tool_call["args"]
+                assistant_payload: Dict[str, Any] = {
+                    "role": "assistant",
+                    "content": assistant_msg.content or "",
+                }
+                if assistant_msg.tool_calls:
+                    assistant_payload["tool_calls"] = [
+                        {
+                            "id": tc.id,
+                            "type": tc.type,
+                            "function": {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments,
+                            },
+                        }
+                        for tc in assistant_msg.tool_calls
+                    ]
+                messages.append(assistant_payload)
 
-                        # A. 提交结果 (退出循环)
-                        if tool_name == "submit_final_analysis":
-                            print(f"    [Result] Batch analysis submitted.")
-                            return tool_args.get("flow_analyses", [])
+                if not assistant_msg.tool_calls:
+                    continue
 
-                        # B. Google 搜索 (继续循环)
-                        elif tool_name == "google_search":
-                            query_payload = tool_args if isinstance(tool_args, dict) else {"query": tool_args}
-                            print(f"    [Search] Query: {query_payload.get('query')}")
-                            search_res = self.google_search_tool.invoke(query_payload)
+                for tool_call in assistant_msg.tool_calls:
+                    tool_name = tool_call.function.name
+                    try:
+                        tool_args = json.loads(tool_call.function.arguments or "{}")
+                    except json.JSONDecodeError:
+                        tool_args = {}
 
-                            # 将搜索结果反馈给 LLM
-                            messages.append(ToolMessage(content=search_res, tool_call_id=tool_call["id"]))
-                
-                else:
-                    # 如果没有调用工具，可能是 LLM 正在进行中间推理 (Thought)，不做操作，继续下一轮
-                    pass
+                    if tool_name == "submit_final_analysis":
+                        print("    [Result] Batch analysis submitted.")
+                        if isinstance(tool_args, dict):
+                            return tool_args.get("flow_analyses", []) or []
+                        return []
+
+                    if tool_name == "google_search":
+                        query = ""
+                        if isinstance(tool_args, dict):
+                            query = tool_args.get("query", "")
+                        print(f"    [Search] Query: {query}")
+                        search_res = self._google_search(query)
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "content": search_res,
+                            }
+                        )
+                        continue
 
             except Exception as e:
                 logging.error(f"Error in batch loop: {e}")
