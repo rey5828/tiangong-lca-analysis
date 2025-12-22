@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List
 
 
-BASE_DIR = Path(__file__).resolve().parents[2]
+BASE_DIR = Path(__file__).resolve().parents[3]
 MAP_PATH = BASE_DIR / "data/jsons/map_elementary_flows.json"
 GHG_PATH = BASE_DIR / "data/jsons/ghgs.json"
 FLOWS_ANALYZE_PATH = BASE_DIR / "data/jsons/flows_list_analyze.json"

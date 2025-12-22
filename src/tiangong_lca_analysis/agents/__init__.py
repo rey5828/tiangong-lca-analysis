@@ -5,13 +5,13 @@ LCA Agent Package - 生命周期评估分析智能体
 特别关注其温室气体排放与特定元素流之间的关系。
 """
 
-# 导出关键模块，使它们可以通过 lca_agent.xxx 直接访问
+# 导出关键模块，使它们可以通过 tiangong_lca_analysis.agents.xxx 直接访问
 from . import config
 from . import data_fetcher
 from . import lca_analyst
 
 # 可以选择性地导出一些常用的函数或类，使其可以直接导入
-# 例如：from lca_agent import LCAAnalystAgent
+# 例如：from tiangong_lca_analysis.agents import LCAAnalystAgent
 from .lca_analyst import LCAAnalystAgent
 from .data_fetcher import load_static_data, fetch_data_for_process
 

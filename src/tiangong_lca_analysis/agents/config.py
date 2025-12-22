@@ -29,12 +29,12 @@ MODELS_TO_RUN = [
 
 # --- 路径配置 ---
 
-# 获取项目的根目录 (即 config.py 所在的目录的上一级)
+# 获取项目的根目录 (即仓库根目录)
 # Path(__file__) 获取当前文件路径
 # .resolve() 获取绝对路径
 # .parent 获取父目录
-# 假设结构是 project_root/config.py, 那么 ROOT_DIR 就是 project_root
-ROOT_DIR = Path(__file__).resolve().parents[2] # 获取上两级目录
+# 当前文件位于 src/tiangong_lca_analysis/agents/config.py，向上三级回到仓库根目录
+ROOT_DIR = Path(__file__).resolve().parents[3]
 
 # 定义数据和结果目录的路径
 DATA_DIR = ROOT_DIR / "data"
