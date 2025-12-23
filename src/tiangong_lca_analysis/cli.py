@@ -2,9 +2,16 @@ import json
 import time
 import logging
 import os
+import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Dict, List
+
+# Ensure package root is on sys.path when running as a script (python src/tiangong_lca_analysis/cli.py)
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SRC_DIR = PROJECT_ROOT / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
 
 from tiangong_lca_analysis.agents import config
 from tiangong_lca_analysis.agents.data_fetcher import (
@@ -66,7 +73,7 @@ def process_single_process(
 
         analyst = LCAAnalystAgent(model_name=model_name)
 
-        max_retries = 3
+        max_retries = 5
         flows_to_process = target_flows[:]
         all_results = []
 
