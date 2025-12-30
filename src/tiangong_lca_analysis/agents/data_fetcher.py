@@ -47,7 +47,7 @@ def fetch_data_for_process(
     process_id: str,
     flows_map: FlowMap,
     ghg_combos: List[str],
-) -> Optional[Tuple[str, List[Dict[str, Any]], str, List[str]]]:
+) -> Optional[Tuple[Dict[str, Any], Dict[str, List[Dict[str, Any]]], List[Dict[str, Any]], str, List[str]]]:
     """
     为单个给定的process_id提取其特定的数据，并筛选出相关的GHG。
 
@@ -57,7 +57,7 @@ def fetch_data_for_process(
         ghg_combos: 所有GHG组合信息列表。
 
     Returns:
-        一个元组，包含 (过程JSON内容的字符串, 此过程待分析的flows列表, 与此过程相关的GHG列表字符串, 相关GHG组合列表)。
+        一个元组，包含 (过程数据字典, exchange映射, 此过程待分析的flows列表, 与此过程相关的GHG列表字符串, 相关GHG组合列表)。
         如果找不到对应的JSON文件，则返回 None。
     """
     print(f"[*] Fetching data for process: {process_id}")
@@ -87,8 +87,7 @@ def fetch_data_for_process(
     
     try:
         with open(process_json_path, 'r', encoding='utf-8') as f:
-            process_json_content = f.read()
-            process_data = json.loads(process_json_content)
+            process_data = json.load(f)
     except FileNotFoundError:
         print(f"[X] Error: JSON file not found for process {process_id} at {process_json_path}")
         return None
@@ -99,6 +98,8 @@ def fetch_data_for_process(
     # 4. 筛选与此过程相关的GHG
     relevant_ghgs: List[str] = []
     ghg_combo_set = set(ghg_combos)
+
+    exchange_map: Dict[str, List[Dict[str, Any]]] = {}
 
     for exchange in process_data.get('exchanges', []):
         is_emission = not exchange.get('isInput', True)
@@ -113,6 +114,16 @@ def fetch_data_for_process(
         combo = f"{flow_name} | {flow_category}"
         if combo in ghg_combo_set and combo not in relevant_ghgs:
             relevant_ghgs.append(combo)
+
+        # 为后续 prompt 压缩构建 exchange 映射
+        entry = {
+            "is_input": exchange.get("isInput", True),
+            "amount": exchange.get("amount"),
+            "unit": (exchange.get("unit") or {}).get("name"),
+            "flow_type": flow.get("flowType"),
+            "location": exchange.get("location"),
+        }
+        exchange_map.setdefault(combo, []).append(entry)
     
     if not relevant_ghgs:
         print(f"[!] Warning: No relevant GHGs found in process {process_id}. The GHG list for the prompt will be empty.")
@@ -127,4 +138,4 @@ def fetch_data_for_process(
 
     print(f"[+] Successfully fetched data and found {len(relevant_ghgs)} relevant GHGs for {process_id}.")
 
-    return (process_json_content, target_flows, relevant_ghg_list_str, relevant_ghgs)
+    return (process_data, exchange_map, target_flows, relevant_ghg_list_str, relevant_ghgs)

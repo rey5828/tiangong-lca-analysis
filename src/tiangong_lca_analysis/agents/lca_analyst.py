@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from typing import Any, Dict, List
 
 from openai import OpenAI
@@ -16,9 +17,18 @@ class LCAAnalystAgent:
         self.model_name = model_name
 
         # 1. 初始化 OpenAI Client（指向本地 vLLM 服务，不再需要 API Key）
-        self.client = OpenAI(api_key="EMPTY", base_url=config.VLLM_BASE_URL)
+        request_timeout = float(os.getenv("LCA_REQUEST_TIMEOUT", "300"))
+        self.client = OpenAI(
+            api_key="EMPTY",
+            base_url=config.VLLM_BASE_URL,
+            timeout=request_timeout,
+        )
+
+        # 控制每次请求的 flow 数量，避免 prompt 过大导致超时
+        self.batch_size = max(1, int(os.getenv("LCA_BATCH_SIZE", "3")))
 
         print(f"[*] LCA Agent initialized with model: {self.model_name} (local vLLM endpoint).")
+        print(f"    [-] Using batch size = {self.batch_size}, timeout = {request_timeout}s.")
 
     def _define_final_schema(self):
         """
@@ -74,6 +84,50 @@ class LCAAnalystAgent:
             tools=tools,
             tool_choice="auto",
         )
+
+    def _build_batch_context(
+        self,
+        process_data: Dict[str, Any],
+        exchange_map: Dict[str, List[Dict[str, Any]]],
+        batch_flows: List[Dict[str, Any]],
+        relevant_ghgs: List[str],
+    ) -> str:
+        """
+        根据当前批次筛选出紧凑的上下文，避免把整个 process JSON 都塞进 prompt。
+        """
+        combos = {flow.get("flow_combo") for flow in batch_flows}
+        combos.update(relevant_ghgs or [])
+
+        exchange_snippets: List[Dict[str, Any]] = []
+        for combo in sorted(combo for combo in combos if combo):
+            entries = exchange_map.get(combo)
+            if entries:
+                for entry in entries:
+                    exchange_snippets.append(
+                        {
+                            "flow_combo": combo,
+                            "is_input": entry.get("is_input"),
+                            "amount": entry.get("amount"),
+                            "unit": entry.get("unit"),
+                            "flow_type": entry.get("flow_type"),
+                        }
+                    )
+            else:
+                exchange_snippets.append(
+                    {
+                        "flow_combo": combo,
+                        "note": "not present in process exchanges",
+                    }
+                )
+
+        context_payload = {
+            "process_name": process_data.get("name"),
+            "description": process_data.get("description", ""),
+            "technology": process_data.get("processDocumentation", {}).get("technologyDescription", ""),
+            "batch_exchanges": exchange_snippets,
+        }
+
+        return json.dumps(context_payload, ensure_ascii=False, indent=2)
 
     def _run_batch_analysis(self, process_context: str, batch_flows: List[Dict], ghg_list_str: str, max_iterations: int = 5) -> List[Dict]:
         """
@@ -154,7 +208,15 @@ Call `submit_final_analysis` when done.
             logging.error(f"Error during batch analysis: {e}")
             return []
 
-    def analyze_process(self, process_id: str, process_json_content: str, target_flows: List[Dict], ghg_list_str: str) -> Dict:
+    def analyze_process(
+        self,
+        process_id: str,
+        process_data: Dict[str, Any],
+        exchange_map: Dict[str, List[Dict[str, Any]]],
+        target_flows: List[Dict],
+        ghg_list_str: str,
+        relevant_ghgs: List[str],
+    ) -> Dict:
         """
         主入口：处理数据，分批调用，合并结果。
         """
@@ -164,8 +226,8 @@ Call `submit_final_analysis` when done.
         # 将 Process Info 提取出来，避免在每个 Batch 里重复太长的无关信息
         # 这里直接使用传入的 content，假设调用者已经做好了瘦身
         
-        # 2. 分批策略 (Batching Strategy) - 10 Flows per Batch
-        BATCH_SIZE = 15
+        # 2. 分批策略 - 默认 8 个 flow，避免 prompt 过大
+        BATCH_SIZE = self.batch_size
         all_analyses = []
         
         total_batches = (len(target_flows) + BATCH_SIZE - 1) // BATCH_SIZE
@@ -175,8 +237,16 @@ Call `submit_final_analysis` when done.
             batch_flows = target_flows[i : i + BATCH_SIZE]
             print(f"[-] Processing Batch {batch_id}/{total_batches} ({len(batch_flows)} flows)")
             
+            # 为当前批次构建瘦身后的上下文，降低超时风险
+            process_context = self._build_batch_context(
+                process_data=process_data,
+                exchange_map=exchange_map,
+                batch_flows=batch_flows,
+                relevant_ghgs=relevant_ghgs,
+            )
+
             # 运行该批次
-            batch_results = self._run_batch_analysis(process_json_content, batch_flows, ghg_list_str)
+            batch_results = self._run_batch_analysis(process_context, batch_flows, ghg_list_str)
             all_analyses.extend(batch_results)
 
         # 3. 构造最终符合原始格式的返回

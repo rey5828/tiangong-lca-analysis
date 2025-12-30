@@ -66,7 +66,7 @@ def process_single_process(
         if not process_data_package:
             return
 
-        process_json_content, target_flows, relevant_ghg_list_str, relevant_ghgs = process_data_package
+        process_data, exchange_map, target_flows, relevant_ghg_list_str, relevant_ghgs = process_data_package
 
         ghg_log_str = ", ".join(relevant_ghgs) if relevant_ghgs else "None"
         logging.info(f"[{process_id}] Relevant GHG combos: {ghg_log_str}")
@@ -88,9 +88,11 @@ def process_single_process(
 
             analysis_result_dict = analyst.analyze_process(
                 process_id=process_id,
-                process_json_content=process_json_content,
+                process_data=process_data,
+                exchange_map=exchange_map,
                 target_flows=flows_to_process,
                 ghg_list_str=relevant_ghg_list_str,
+                relevant_ghgs=relevant_ghgs,
             )
 
             if not analysis_result_dict or "flow_analyses" not in analysis_result_dict:
