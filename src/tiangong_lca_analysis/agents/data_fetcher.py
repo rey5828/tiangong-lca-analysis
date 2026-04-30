@@ -1,5 +1,5 @@
 import json
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from . import config
 
@@ -47,7 +47,7 @@ def fetch_data_for_process(
     process_id: str,
     flows_map: FlowMap,
     ghg_combos: List[str],
-) -> Optional[Tuple[str, List[Dict[str, Any]], str, List[str]]]:
+) -> Optional[Tuple[Dict[str, Any], List[Dict[str, Any]], List[str]]]:
     """
     为单个给定的process_id提取其特定的数据，并筛选出相关的GHG。
 
@@ -57,7 +57,7 @@ def fetch_data_for_process(
         ghg_combos: 所有GHG组合信息列表。
 
     Returns:
-        一个元组，包含 (过程JSON内容的字符串, 此过程待分析的flows列表, 与此过程相关的GHG列表字符串, 相关GHG组合列表)。
+        一个元组，包含 (过程JSON对象, 此过程待分析的flows列表, 相关GHG组合列表)。
         如果找不到对应的JSON文件，则返回 None。
     """
     print(f"[*] Fetching data for process: {process_id}")
@@ -87,8 +87,7 @@ def fetch_data_for_process(
     
     try:
         with open(process_json_path, 'r', encoding='utf-8') as f:
-            process_json_content = f.read()
-            process_data = json.loads(process_json_content)
+            process_data = json.load(f)
     except FileNotFoundError:
         print(f"[X] Error: JSON file not found for process {process_id} at {process_json_path}")
         return None
@@ -118,13 +117,6 @@ def fetch_data_for_process(
         print(f"[!] Warning: No relevant GHGs found in process {process_id}. The GHG list for the prompt will be empty.")
         # 即使为空，我们仍然可以继续，让模型知道这个过程没有GHG排放
     
-    # 5. 格式化筛选后的GHG列表以注入Prompt
-    if relevant_ghgs:
-        relevant_ghg_list_str = "\n".join([f"- {combo}" for combo in relevant_ghgs])
-    else:
-        relevant_ghg_list_str = "- None"
-
-
     print(f"[+] Successfully fetched data and found {len(relevant_ghgs)} relevant GHGs for {process_id}.")
 
-    return (process_json_content, target_flows, relevant_ghg_list_str, relevant_ghgs)
+    return (process_data, target_flows, relevant_ghgs)

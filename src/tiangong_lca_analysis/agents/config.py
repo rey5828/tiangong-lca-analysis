@@ -1,30 +1,32 @@
 import os
 from pathlib import Path
 
+def _parse_base_urls(raw_value: str) -> list[str]:
+    urls = [item.strip().rstrip("/") for item in raw_value.split(",") if item.strip()]
+    return urls or ["http://192.168.1.148:7730/v1"]
+
+
 # --- 核心配置 ---
 
-# 使用环境变量获取API密钥，这比硬编码更安全。
-# 在运行脚本前，请设置环境变量 OPENAI_API_KEY
-# 如果没有设置，它会使用 "YOUR_API_KEY_HERE" 作为备用
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen3.5-397B-A17B-GPTQ-Int4")
+MODELHUB_API_KEY = os.getenv("MODELHUB_API_KEY", "EMPTY")
+MODELHUB_BASE_URLS = _parse_base_urls(
+    os.getenv(
+        "MODELHUB_BASE_URLS",
+        "http://192.168.1.148:7730/v1,http://192.168.1.143:7730/v1",
+    )
+)
+MODELS_TO_RUN = [MODEL_NAME]
 
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-OPENAI_BASE_URL = "https://api.openai.com/v1"
-VLLM_BASE_URL = "http://192.168.1.140:8001/v1/"
-
-MODELS_TO_RUN = [
-    #"anthropic/claude-sonnet-4", 
-    #"deepseek/deepseek-r1-0528",
-    #"qwen/qwen3-235b-a22b-thinking-2507",
-    #"deepseek/deepseek-r1-0528:free",
-    #"google/gemini-2.5-pro", 
-    #"google/gemini-3-pro-preview",
-    #"openai/o3-mini-high",
-    #"gpt-5-mini-2025-08-07",
-    #"gpt-5.1-2025-11-13",
-    "openai-mirror/gpt-oss-120b"
-]
+MODEL_TEMPERATURE = float(os.getenv("MODEL_TEMPERATURE", "0.1"))
+MAX_GHGS_PER_CALL = int(os.getenv("MAX_GHGS_PER_CALL", "5"))
+MAX_CHUNK_RETRIES = int(os.getenv("MAX_CHUNK_RETRIES", "5"))
+MODEL_TIMEOUT_SECONDS = int(os.getenv("MODEL_TIMEOUT_SECONDS", "180"))
+DEFAULT_LCA_MAX_WORKERS = int(os.getenv("LCA_MAX_WORKERS", "8"))
+MAX_CONCURRENT_FLOWS_PER_PROCESS = int(os.getenv("MAX_CONCURRENT_FLOWS_PER_PROCESS", "2"))
+MAX_IN_FLIGHT_MODEL_REQUESTS = int(
+    os.getenv("MAX_IN_FLIGHT_MODEL_REQUESTS", str(DEFAULT_LCA_MAX_WORKERS))
+)
 
 
 # --- 路径配置 ---
