@@ -105,6 +105,39 @@ def load_existing_flow_results(output_path: Path, process_id: str) -> Dict[str, 
     return normalized
 
 
+def merge_flow_results_maps(
+    primary_map: Dict[str, Dict[str, Any]],
+    secondary_map: Dict[str, Dict[str, Any]],
+    process_id: str,
+) -> Dict[str, Dict[str, Any]]:
+    merged: Dict[str, Dict[str, Any]] = {}
+    flow_keys = set(primary_map) | set(secondary_map)
+
+    for flow_combo in flow_keys:
+        flow_entries = [
+            entry
+            for entry in (primary_map.get(flow_combo), secondary_map.get(flow_combo))
+            if isinstance(entry, dict)
+        ]
+        if not flow_entries:
+            continue
+
+        ghg_map: Dict[str, Dict[str, Any]] = {}
+        for flow_entry in flow_entries:
+            for ghg_analysis in flow_entry.get("individual_ghg_analyses") or []:
+                ghg_combo = ghg_analysis.get("ghg_combo") if isinstance(ghg_analysis, dict) else None
+                if ghg_combo:
+                    ghg_map[ghg_combo] = ghg_analysis
+
+        merged[flow_combo] = {
+            "process_id": flow_entries[0].get("process_id") or process_id,
+            "flow_combo": flow_combo,
+            "individual_ghg_analyses": list(ghg_map.values()),
+        }
+
+    return merged
+
+
 def build_completed_pairs_map(
     flow_results_map: Dict[str, Dict[str, Any]],
     relevant_ghgs: List[str],
@@ -224,6 +257,7 @@ def process_single_process(
     flows_to_analyze_map: Dict[str, List[str]],
     ghg_combos: List[str],
     model_results_dir: Path,
+    legacy_output_path: Path | None = None,
 ) -> Dict[str, Any]:
     output_path = model_results_dir / f"{process_id}.json"
     status_payload = {
@@ -244,6 +278,17 @@ def process_single_process(
         status_payload["expected_pairs"] = expected_total_pairs
 
         flow_results_map = load_existing_flow_results(output_path, process_id)
+        if legacy_output_path and legacy_output_path != output_path:
+            legacy_flow_results_map = load_existing_flow_results(legacy_output_path, process_id)
+            flow_results_map = merge_flow_results_maps(
+                flow_results_map,
+                legacy_flow_results_map,
+                process_id,
+            )
+
+        if flow_results_map and not output_path.exists():
+            save_process_results(output_path, process_id, flow_results_map, target_flows, relevant_ghgs)
+
         completed_pairs_map = build_completed_pairs_map(flow_results_map, relevant_ghgs)
         completed_total_pairs = count_completed_pairs(completed_pairs_map)
 
@@ -456,6 +501,8 @@ def run_pipeline() -> None:
         model_path_name = safe_model_name_for_path(model_name)
         model_results_dir = config.RESULTS_JSON_DIR / model_path_name
         model_results_dir.mkdir(exist_ok=True, parents=True)
+        seed_model_name = os.getenv("LCA_SEED_MODEL_NAME", "Qwen/Qwen3.5-397B-A17B-GPTQ-Int4")
+        seed_results_dir = config.RESULTS_JSON_DIR / safe_model_name_for_path(seed_model_name)
 
         processes_to_run = [process_id for process_id in process_ids if process_id in flows_to_analyze_map]
         total_processes = len(processes_to_run)
@@ -470,6 +517,8 @@ def run_pipeline() -> None:
         logging.info("Max in-flight model requests: %s", config.MAX_IN_FLIGHT_MODEL_REQUESTS)
         logging.info("Processes queued: %s", total_processes)
         logging.info("Max workers: %s", max_workers)
+        if seed_results_dir != model_results_dir:
+            logging.info("Seed results dir: %s", seed_results_dir)
         logging.info("=" * 60)
 
         summary_counts = {
@@ -491,6 +540,11 @@ def run_pipeline() -> None:
                     flows_to_analyze_map,
                     ghg_combos,
                     model_results_dir,
+                    (
+                        seed_results_dir / f"{process_id}.json"
+                        if seed_results_dir != model_results_dir
+                        else None
+                    ),
                 ): process_id
                 for process_id in processes_to_run
             }

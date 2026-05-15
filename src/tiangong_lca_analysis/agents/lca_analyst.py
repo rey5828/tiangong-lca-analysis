@@ -113,8 +113,8 @@ Assign exactly one qualitative_relationship:
 Use Positive when the pollutant and GHG share the same in-process causal basis.
 This applies if one of the following holds:
 - the same physico-chemical formation pathway,
-- the same release mechanism,
-- the same emitted process stream / exhaust stream / fugitive stream,
+- the same physicochemical release mechanism,
+- the same intrinsically shared escaping substance flow, where both emissions are constituents of the same leaked/volatilized/directly escaping material,
 - the same reaction network producing both as coproducts/byproducts,
 - the same clearly identified source operation with direct co-generation, which means a specific emission-generating source within the unit process from which both emissions are directly released. This is stronger than merely being in the same activity, equipment, or stage.
 This shared causal basis may be explicitly stated in the context or strongly inferable from standard technical knowledge about the named unit process. Any one Positive condition is sufficient. If any Positive condition is satisfied, do not assign Neutral merely because the pollutant and GHG differ in detailed formation chemistry or differ in micro-level formation pathways.
@@ -124,6 +124,7 @@ Do NOT use Positive based only on:
 - same stage,
 - same fuel-consuming event,
 - generic shared dependence on temperature, residence time, oxygen level, efficiency, or throughput,
+- mere downstream discharge through the same stack, flue gas, exhaust duct, or outlet,
 unless these are clearly part of the same formation or release mechanism for both emissions.
 ## 2. Negative
 Use Negative only when the context supports a clear opposing relationship or transfer mechanism within the same unit process.
