@@ -140,15 +140,19 @@ def merge_flow_results_maps(
 
 def build_completed_pairs_map(
     flow_results_map: Dict[str, Dict[str, Any]],
-    relevant_ghgs: List[str],
+    target_flows: List[Dict[str, Any]],
 ) -> Dict[str, set[str]]:
-    relevant_ghg_set = set(relevant_ghgs)
+    target_ghgs_by_flow = {
+        flow_info["flow_combo"]: set(flow_info.get("ghg_combos") or [])
+        for flow_info in target_flows
+    }
     completed: Dict[str, set[str]] = {}
-    for flow_combo, flow_analysis in flow_results_map.items():
+    for flow_combo, target_ghgs in target_ghgs_by_flow.items():
+        flow_analysis = flow_results_map.get(flow_combo) or {}
         completed[flow_combo] = {
             item.get("ghg_combo")
             for item in flow_analysis.get("individual_ghg_analyses") or []
-            if item.get("ghg_combo") in relevant_ghg_set
+            if item.get("ghg_combo") in target_ghgs
         }
     return completed
 
@@ -159,10 +163,8 @@ def count_completed_pairs(completed_pairs_map: Dict[str, set[str]]) -> int:
 
 def order_flow_results(
     flow_results_map: Dict[str, Dict[str, Any]],
-    target_flows: List[Dict[str, str]],
-    relevant_ghgs: List[str],
+    target_flows: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
-    ghg_order = {ghg: index for index, ghg in enumerate(relevant_ghgs)}
     ordered_results: List[Dict[str, Any]] = []
 
     for flow_info in target_flows:
@@ -171,10 +173,13 @@ def order_flow_results(
         if not flow_analysis:
             continue
 
+        flow_ghg_order = {
+            ghg: index for index, ghg in enumerate(flow_info.get("ghg_combos") or [])
+        }
         ghg_analyses = list(flow_analysis.get("individual_ghg_analyses") or [])
         ghg_analyses.sort(
             key=lambda item: (
-                ghg_order.get(item.get("ghg_combo"), len(ghg_order)),
+                flow_ghg_order.get(item.get("ghg_combo"), len(flow_ghg_order)),
                 item.get("ghg_combo") or "",
             )
         )
@@ -194,12 +199,11 @@ def save_process_results(
     output_path: Path,
     process_id: str,
     flow_results_map: Dict[str, Dict[str, Any]],
-    target_flows: List[Dict[str, str]],
-    relevant_ghgs: List[str],
+    target_flows: List[Dict[str, Any]],
 ) -> None:
     atomic_write_json(
         output_path,
-        {process_id: order_flow_results(flow_results_map, target_flows, relevant_ghgs)},
+        {process_id: order_flow_results(flow_results_map, target_flows)},
     )
 
 
@@ -240,7 +244,7 @@ def merge_flow_chunk_result(
     return new_items
 
 
-def build_empty_flow_results(process_id: str, target_flows: List[Dict[str, str]]) -> Dict[str, Dict[str, Any]]:
+def build_empty_flow_results(process_id: str, target_flows: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
     return {
         flow_info["flow_combo"]: {
             "process_id": process_id,
@@ -254,8 +258,7 @@ def build_empty_flow_results(process_id: str, target_flows: List[Dict[str, str]]
 def process_single_process(
     model_name: str,
     process_id: str,
-    flows_to_analyze_map: Dict[str, List[str]],
-    ghg_combos: List[str],
+    flow_targets_map: Dict[str, Dict[str, List[str]]],
     model_results_dir: Path,
     legacy_output_path: Path | None = None,
 ) -> Dict[str, Any]:
@@ -268,13 +271,13 @@ def process_single_process(
     }
 
     try:
-        process_data_package = fetch_data_for_process(process_id, flows_to_analyze_map, ghg_combos)
+        process_data_package = fetch_data_for_process(process_id, flow_targets_map)
         if not process_data_package:
             status_payload["status"] = "skipped_no_target_flows"
             return status_payload
 
-        process_data, target_flows, relevant_ghgs = process_data_package
-        expected_total_pairs = len(target_flows) * len(relevant_ghgs)
+        process_data, target_flows = process_data_package
+        expected_total_pairs = sum(len(flow_info.get("ghg_combos") or []) for flow_info in target_flows)
         status_payload["expected_pairs"] = expected_total_pairs
 
         flow_results_map = load_existing_flow_results(output_path, process_id)
@@ -287,24 +290,24 @@ def process_single_process(
             )
 
         if flow_results_map and not output_path.exists():
-            save_process_results(output_path, process_id, flow_results_map, target_flows, relevant_ghgs)
+            save_process_results(output_path, process_id, flow_results_map, target_flows)
 
-        completed_pairs_map = build_completed_pairs_map(flow_results_map, relevant_ghgs)
+        completed_pairs_map = build_completed_pairs_map(flow_results_map, target_flows)
         completed_total_pairs = count_completed_pairs(completed_pairs_map)
 
         logging.info(
-            "[%s] Starting process analysis. target_flows=%s relevant_ghgs=%s completed_pairs=%s/%s",
+            "[%s] Starting process analysis. target_flows=%s target_pairs=%s completed_pairs=%s/%s",
             process_id,
             len(target_flows),
-            len(relevant_ghgs),
+            expected_total_pairs,
             completed_total_pairs,
             expected_total_pairs,
         )
 
-        if not relevant_ghgs:
+        if expected_total_pairs == 0:
             if not flow_results_map:
                 flow_results_map = build_empty_flow_results(process_id, target_flows)
-                save_process_results(output_path, process_id, flow_results_map, target_flows, relevant_ghgs)
+                save_process_results(output_path, process_id, flow_results_map, target_flows)
             status_payload["status"] = "completed_no_ghgs"
             return status_payload
 
@@ -316,15 +319,16 @@ def process_single_process(
 
         analyst = LCAAnalystAgent(model_name=model_name)
         flow_count = len(target_flows)
-        relevant_ghg_set = set(relevant_ghgs)
         state_lock = threading.Lock()
         progress = {"completed_pairs": completed_total_pairs}
 
-        def process_single_flow(flow_index: int, flow_info: Dict[str, str]) -> None:
+        def process_single_flow(flow_index: int, flow_info: Dict[str, Any]) -> None:
             flow_combo = flow_info["flow_combo"]
+            target_ghgs = list(flow_info.get("ghg_combos") or [])
+            target_ghg_set = set(target_ghgs)
             with state_lock:
                 completed_for_flow = set(completed_pairs_map.setdefault(flow_combo, set()))
-            remaining_ghgs = [ghg for ghg in relevant_ghgs if ghg not in completed_for_flow]
+            remaining_ghgs = [ghg for ghg in target_ghgs if ghg not in completed_for_flow]
 
             if not remaining_ghgs:
                 return
@@ -388,7 +392,7 @@ def process_single_process(
                         completed_for_flow = {
                             item.get("ghg_combo")
                             for item in flow_results_map.get(flow_combo, {}).get("individual_ghg_analyses") or []
-                            if item.get("ghg_combo") in relevant_ghg_set
+                            if item.get("ghg_combo") in target_ghg_set
                         }
                         completed_pairs_map[flow_combo] = completed_for_flow
                         progress["completed_pairs"] += new_items
@@ -398,7 +402,6 @@ def process_single_process(
                             process_id,
                             flow_results_map,
                             target_flows,
-                            relevant_ghgs,
                         )
 
                     missing_after_attempt = [ghg for ghg in chunk_remaining if ghg not in completed_for_flow]
@@ -491,12 +494,6 @@ def run_pipeline() -> None:
 
     configure_logging()
 
-    try:
-        process_ids, flows_to_analyze_map, ghg_combos = load_static_data()
-    except Exception as exc:
-        logging.critical("Critical error during static data loading: %s", exc, exc_info=True)
-        return
-
     for model_name in config.MODELS_TO_RUN:
         model_path_name = safe_model_name_for_path(model_name)
         model_results_dir = config.RESULTS_JSON_DIR / model_path_name
@@ -504,7 +501,18 @@ def run_pipeline() -> None:
         seed_model_name = os.getenv("LCA_SEED_MODEL_NAME", "Qwen/Qwen3.5-397B-A17B-GPTQ-Int4")
         seed_results_dir = config.RESULTS_JSON_DIR / safe_model_name_for_path(seed_model_name)
 
-        processes_to_run = [process_id for process_id in process_ids if process_id in flows_to_analyze_map]
+        try:
+            process_ids, flow_targets_map = load_static_data(exclude_results_dir=model_results_dir)
+        except Exception as exc:
+            logging.critical(
+                "Critical error during static data loading for model %s: %s",
+                model_name,
+                exc,
+                exc_info=True,
+            )
+            continue
+
+        processes_to_run = process_ids
         total_processes = len(processes_to_run)
         max_workers = int(os.getenv("LCA_MAX_WORKERS", str(config.DEFAULT_LCA_MAX_WORKERS)))
 
@@ -515,6 +523,8 @@ def run_pipeline() -> None:
         logging.info("GHG chunk size: %s", config.MAX_GHGS_PER_CALL)
         logging.info("Per-process concurrent flow workers: %s", config.MAX_CONCURRENT_FLOWS_PER_PROCESS)
         logging.info("Max in-flight model requests: %s", config.MAX_IN_FLIGHT_MODEL_REQUESTS)
+        logging.info("Source results dir: %s", config.SOURCE_RESULTS_DIR)
+        logging.info("Exclude existing process ids from: %s", model_results_dir)
         logging.info("Processes queued: %s", total_processes)
         logging.info("Max workers: %s", max_workers)
         if seed_results_dir != model_results_dir:
@@ -537,8 +547,7 @@ def run_pipeline() -> None:
                     process_single_process,
                     model_name,
                     process_id,
-                    flows_to_analyze_map,
-                    ghg_combos,
+                    flow_targets_map,
                     model_results_dir,
                     (
                         seed_results_dir / f"{process_id}.json"

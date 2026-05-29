@@ -394,6 +394,7 @@ class LCAAnalystAgent:
     _clients: List[str] = []
     _client_index = 0
     _request_semaphore = threading.BoundedSemaphore(config.MAX_IN_FLIGHT_MODEL_REQUESTS)
+    _force_tool_choice_supported: bool | None = None
 
     def __init__(self, model_name: str):
         self.model_name = model_name
@@ -424,6 +425,36 @@ class LCAAnalystAgent:
     def _build_tools(self) -> List[Dict[str, Any]]:
         return [{"type": "function", "function": FINAL_SCHEMA}]
 
+    @staticmethod
+    def _build_payload(
+        model_name: str,
+        messages: List[Dict[str, Any]],
+        tools: List[Dict[str, Any]],
+        force_tool_choice: bool,
+    ) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {
+            "model": model_name,
+            "messages": messages,
+            "tools": tools,
+            "temperature": config.MODEL_TEMPERATURE,
+        }
+        if force_tool_choice:
+            payload["tool_choice"] = {
+                "type": "function",
+                "function": {"name": FINAL_SCHEMA["name"]},
+            }
+        return payload
+
+    @staticmethod
+    def _is_tool_choice_thinking_mode_error(status_code: int, body: str) -> bool:
+        if status_code != 400:
+            return False
+        lowered = (body or "").lower()
+        return (
+            "tool_choice" in lowered
+            and ("thinking mode" in lowered or "does not support being set to required or object" in lowered)
+        )
+
     def _chat(
         self,
         messages: List[Dict[str, Any]],
@@ -431,35 +462,74 @@ class LCAAnalystAgent:
         route_key: str | None = None,
     ) -> Dict[str, Any]:
         last_error: Exception | None = None
-        payload = {
-            "model": self.model_name,
-            "messages": messages,
-            "tools": tools,
-            "tool_choice": {
-                "type": "function",
-                "function": {"name": FINAL_SCHEMA["name"]},
-            },
-            "temperature": config.MODEL_TEMPERATURE,
-        }
+        force_tool_choice = type(self)._force_tool_choice_supported is not False
 
         with type(self)._request_semaphore:
             for base_url in self._client_order(route_key=route_key):
-                request = urllib.request.Request(
-                    f"{base_url}/chat/completions",
-                    data=json.dumps(payload).encode("utf-8"),
-                    method="POST",
-                    headers={
-                        "Authorization": f"Bearer {config.MODELHUB_API_KEY}",
-                        "Content-Type": "application/json",
-                        "Accept": "application/json",
-                        "User-Agent": "Mozilla/5.0",
-                    },
-                )
                 try:
+                    payload = self._build_payload(
+                        model_name=self.model_name,
+                        messages=messages,
+                        tools=tools,
+                        force_tool_choice=force_tool_choice,
+                    )
+                    request = urllib.request.Request(
+                        f"{base_url}/chat/completions",
+                        data=json.dumps(payload).encode("utf-8"),
+                        method="POST",
+                        headers={
+                            "Authorization": f"Bearer {config.MODELHUB_API_KEY}",
+                            "Content-Type": "application/json",
+                            "Accept": "application/json",
+                            "User-Agent": "Mozilla/5.0",
+                        },
+                    )
                     with urllib.request.urlopen(request, timeout=config.MODEL_TIMEOUT_SECONDS) as response:
                         return json.loads(response.read().decode("utf-8"))
                 except urllib.error.HTTPError as exc:
                     body = exc.read().decode("utf-8", errors="replace")
+                    if force_tool_choice and self._is_tool_choice_thinking_mode_error(exc.code, body):
+                        logging.warning(
+                            "Model endpoint %s rejected forced tool_choice in thinking mode. "
+                            "Retrying without forced tool_choice and caching compatibility.",
+                            base_url,
+                        )
+                        type(self)._force_tool_choice_supported = False
+                        force_tool_choice = False
+                        try:
+                            fallback_payload = self._build_payload(
+                                model_name=self.model_name,
+                                messages=messages,
+                                tools=tools,
+                                force_tool_choice=False,
+                            )
+                            fallback_request = urllib.request.Request(
+                                f"{base_url}/chat/completions",
+                                data=json.dumps(fallback_payload).encode("utf-8"),
+                                method="POST",
+                                headers={
+                                    "Authorization": f"Bearer {config.MODELHUB_API_KEY}",
+                                    "Content-Type": "application/json",
+                                    "Accept": "application/json",
+                                    "User-Agent": "Mozilla/5.0",
+                                },
+                            )
+                            with urllib.request.urlopen(
+                                fallback_request,
+                                timeout=config.MODEL_TIMEOUT_SECONDS,
+                            ) as response:
+                                return json.loads(response.read().decode("utf-8"))
+                        except urllib.error.HTTPError as fallback_exc:
+                            fallback_body = fallback_exc.read().decode("utf-8", errors="replace")
+                            last_error = RuntimeError(
+                                f"HTTP {fallback_exc.code} from {base_url}/chat/completions: {fallback_body}"
+                            )
+                            logging.warning("Model fallback request failed via %s: %s", base_url, last_error)
+                            continue
+                        except Exception as fallback_exc:
+                            last_error = fallback_exc
+                            logging.warning("Model fallback request failed via %s: %s", base_url, fallback_exc)
+                            continue
                     last_error = RuntimeError(
                         f"HTTP {exc.code} from {base_url}/chat/completions: {body}"
                     )

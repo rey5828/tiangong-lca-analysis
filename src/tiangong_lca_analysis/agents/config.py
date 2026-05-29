@@ -8,7 +8,7 @@ def _parse_base_urls(raw_value: str) -> list[str]:
 
 # --- 核心配置 ---
 
-MODEL_NAME = os.getenv("MODEL_NAME", os.getenv("GLM_MODEL_NAME", "GLM-5.1"))
+MODEL_NAME = os.getenv("MODEL_NAME", os.getenv("GLM_MODEL_NAME", "Qwen3.5-397B-A17B"))
 MODELHUB_API_KEY = os.getenv("GLM_API_KEY", os.getenv("MODELHUB_API_KEY", "EMPTY"))
 MODELHUB_BASE_URLS = _parse_base_urls(
     os.getenv(
@@ -21,7 +21,7 @@ MODELS_TO_RUN = [MODEL_NAME]
 MODEL_TEMPERATURE = float(os.getenv("MODEL_TEMPERATURE", "0.1"))
 MAX_GHGS_PER_CALL = int(os.getenv("MAX_GHGS_PER_CALL", "5"))
 MAX_CHUNK_RETRIES = int(os.getenv("MAX_CHUNK_RETRIES", "5"))
-MODEL_TIMEOUT_SECONDS = int(os.getenv("MODEL_TIMEOUT_SECONDS", "180"))
+MODEL_TIMEOUT_SECONDS = int(os.getenv("MODEL_TIMEOUT_SECONDS", "300"))
 DEFAULT_LCA_MAX_WORKERS = int(os.getenv("LCA_MAX_WORKERS", "4"))
 MAX_CONCURRENT_FLOWS_PER_PROCESS = int(os.getenv("MAX_CONCURRENT_FLOWS_PER_PROCESS", "2"))
 MAX_IN_FLIGHT_MODEL_REQUESTS = int(
@@ -42,6 +42,12 @@ ROOT_DIR = Path(__file__).resolve().parents[3]
 DATA_DIR = ROOT_DIR / "data"
 RESULTS_DIR = ROOT_DIR / "output" / "agent_results"
 RESULTS_JSON_DIR = RESULTS_DIR / "individual_jsons"
+SOURCE_RESULTS_DIR = Path(
+    os.getenv(
+        "LCA_SOURCE_RESULTS_DIR",
+        str(RESULTS_JSON_DIR / "openai-mirror_gpt-oss-120b"),
+    )
+)
 
 # 确保结果目录存在
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
